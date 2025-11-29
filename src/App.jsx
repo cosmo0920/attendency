@@ -1,14 +1,50 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+
+const STORAGE_KEY = "attendency_groups";
 
 function App() {
-  const [groups, setGroups] = useState([]);
+  // ✅ 初期化時に localStorage から読み込む
+  const [groups, setGroups] = useState(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+      return [];
+    } catch (e) {
+      console.error("Failed to load from localStorage", e);
+      return [];
+    }
+  });
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [groupName, setGroupName] = useState("");
   const [memberCount, setMemberCount] = useState("");
+  const [editingGroup, setEditingGroup] = useState(null); // null: 新規, object: 編集
 
-  const openModal = () => {
+  // ✅ groups が変わるたびに保存
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(groups));
+    } catch (e) {
+      console.error("Failed to save to localStorage", e);
+    }
+  }, [groups]);
+
+  const openNewModal = () => {
+    setEditingGroup(null);
     setGroupName("");
     setMemberCount("");
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (group, e) => {
+    e.stopPropagation(); // カードクリックのトグルを止める
+    setEditingGroup(group);
+    setGroupName(group.name);
+    setMemberCount(String(group.count));
     setIsModalOpen(true);
   };
 
@@ -16,18 +52,32 @@ function App() {
     setIsModalOpen(false);
   };
 
-  const handleAddGroup = (e) => {
+  const handleAddOrUpdateGroup = (e) => {
     e.preventDefault();
     if (!groupName.trim() || memberCount === "") return;
 
-    const newGroup = {
-      id: Date.now(),
-      name: groupName.trim(),
-      count: Number(memberCount),
-      status: Number(memberCount) === 0 ? "unknown" : "pending",
-    };
+    const countNum = Number(memberCount);
 
-    setGroups((prev) => [...prev, newGroup]);
+    if (editingGroup) {
+      // ✏️ 編集モード
+      setGroups((prev) =>
+        prev.map((g) =>
+          g.id === editingGroup.id
+            ? { ...g, name: groupName.trim(), count: countNum }
+            : g
+        )
+      );
+    } else {
+      // 🆕 新規登録
+      const newGroup = {
+        id: Date.now(),
+        name: groupName.trim(),
+        count: countNum,
+        status: countNum === 0 ? "unknown" : "pending",
+      };
+      setGroups((prev) => [...prev, newGroup]);
+    }
+
     closeModal();
   };
 
@@ -35,17 +85,48 @@ function App() {
     setGroups((prev) =>
       prev.map((g) =>
         g.id === id
-          ? { ...g, status: g.status === "pending" ? "ok" : "pending" }
+          ? {
+              ...g,
+              status:
+                g.status === "pending"
+                  ? "ok"
+                  : g.status === "ok"
+                  ? "pending"
+                  : g.status, // unknown はそのままにしてもいいし、好みに応じて変更
+            }
           : g
       )
     );
   };
 
+  const deleteGroup = (id, e) => {
+    e.stopPropagation(); // カードクリックのトグルを止める
+    setGroups((prev) => prev.filter((g) => g.id !== id));
+  };
+
   const getStatusColor = (status) => {
     if (status === "pending") return "#ff9800"; // 橙
-    if (status === "ok") return "#4caf50";      // 緑
+    if (status === "ok") return "#4caf50"; // 緑
     if (status === "unknown") return "#9c27b0"; // 紫（参加不明）
     return "#ccc";
+  };
+
+  const handleResetAll = () => {
+    if (!window.confirm("本当に全ての集団を削除しますか？")) return;
+
+    setGroups([]);
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch (e) {
+      console.error("Failed to clear localStorage", e);
+    }
+  };
+
+  const getStatusLabel = (status) => {
+    if (status === "pending") return "未確定（タップで出席）";
+    if (status === "ok") return "出席";
+    if (status === "unknown") return "参加不明";
+    return "不明";
   };
 
   return (
@@ -55,6 +136,7 @@ function App() {
         fontFamily: "system-ui, sans-serif",
         padding: "16px 4vw",
         boxSizing: "border-box",
+        background: "#f5f5f5",
       }}
     >
       {/* 中央寄せ + 最大幅コンテナ */}
@@ -65,41 +147,62 @@ function App() {
         }}
       >
         {/* ヘッダー行（タイトル + ボタン） */}
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "12px",
-            flexWrap: "wrap",
-            marginBottom: "16px",
-          }}
-        >
-          <h1 style={{ margin: 0 }}>出欠管理</h1>
+      <div
+         style={{
+           display: "flex",
+           alignItems: "center",
+           justifyContent: "space-between",
+           gap: "12px",
+           flexWrap: "wrap",
+           marginBottom: "16px",
+         }}
+       >
+         <h1 style={{ margin: 0 }}>出欠管理</h1>
 
-          <button
-            onClick={openModal}
-            style={{
-              padding: "8px 16px",
-              borderRadius: "999px",
-              border: "none",
-              cursor: "pointer",
-              fontSize: "14px",
-              boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-              background: "#ffffff",
-            }}
-          >
-            ＋ 集団を追加
-          </button>
-        </div>
+         <div
+           style={{
+             display: "flex",
+             gap: "8px",
+             flexWrap: "wrap",
+           }}
+         >
+           <button
+             onClick={handleResetAll}
+             style={{
+               padding: "8px 12px",
+               borderRadius: "999px",
+               border: "none",
+               cursor: "pointer",
+               fontSize: "13px",
+               background: "#ffebee",
+               color: "#c62828",
+             }}
+           >
+             全体リセット
+           </button>
+
+           <button
+             onClick={openNewModal}
+             style={{
+               padding: "8px 16px",
+               borderRadius: "999px",
+               border: "none",
+               cursor: "pointer",
+               fontSize: "14px",
+               boxShadow: "0 2px 4px rgba(0, 0, 0, 0.1)",
+               background: "#ffffff",
+             }}
+           >
+             ＋ 集団を追加
+           </button>
+         </div>
+       </div>
 
         {/* カードグリッド */}
         <div
+          className="group-grid"
           style={{
             marginTop: "8px",
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: "16px",
           }}
         >
           {groups.map((group) => (
@@ -110,16 +213,58 @@ function App() {
                 background: "#fff",
                 borderRadius: "12px",
                 padding: "16px",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
                 display: "flex",
                 flexDirection: "column",
                 gap: "6px",
                 cursor: "pointer",
                 borderLeft: `8px solid ${getStatusColor(group.status)}`,
                 transition: "transform 0.08s ease, box-shadow 0.08s ease",
+                position: "relative",
               }}
             >
-              <div style={{ fontWeight: 600 }}>{group.name}</div>
+              {/* 右上の操作ボタン */}
+              <div
+                style={{
+                  position: "absolute",
+                  top: 8,
+                  right: 8,
+                  display: "flex",
+                  gap: 4,
+                }}
+              >
+                <button
+                  onClick={(e) => openEditModal(group, e)}
+                  style={{
+                    padding: "2px 6px",
+                    borderRadius: "999px",
+                    border: "none",
+                    fontSize: "11px",
+                    cursor: "pointer",
+                    background: "#eeeeee",
+                  }}
+                >
+                  編集
+                </button>
+                <button
+                  onClick={(e) => deleteGroup(group.id, e)}
+                  style={{
+                    padding: "2px 6px",
+                    borderRadius: "999px",
+                    border: "none",
+                    fontSize: "11px",
+                    cursor: "pointer",
+                    background: "#ffebee",
+                    color: "#c62828",
+                  }}
+                >
+                  削除
+                </button>
+              </div>
+
+              <div style={{ fontWeight: 600, paddingRight: "70px" }}>
+                {group.name}
+              </div>
               <div style={{ fontSize: "13px", color: "#555" }}>
                 人数: {group.count} 名
               </div>
@@ -127,22 +272,10 @@ function App() {
                 style={{
                   marginTop: "4px",
                   fontSize: "12px",
-                        color:
-                          group.status === "pending"
-                            ? "#ff9800"
-                            : group.status === "ok"
-                            ? "#4caf50"
-                            : "#9c27b0",
-                  }}
+                  color: getStatusColor(group.status),
+                }}
               >
-                状態:{" "}
-                  {
-                      group.status === "pending"
-                          ? "未確定（タップで出席）"
-                          : group.status === "ok"
-                          ? "出席"
-                          : "参加不明"
-                  }
+                状態: {getStatusLabel(group.status)}
               </div>
             </div>
           ))}
@@ -171,15 +304,15 @@ function App() {
               background: "#fff",
               borderRadius: "16px",
               padding: "20px",
-              width: "min(420px, 90vw)", // 画面幅に応じて縮む
+              width: "min(420px, 90vw)",
               boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
             }}
           >
             <h2 style={{ marginTop: 0, marginBottom: "12px" }}>
-              集団を登録
+              {editingGroup ? "集団を編集" : "集団を登録"}
             </h2>
             <form
-              onSubmit={handleAddGroup}
+              onSubmit={handleAddOrUpdateGroup}
               style={{
                 display: "flex",
                 flexDirection: "column",
@@ -257,7 +390,7 @@ function App() {
                     color: "#fff",
                   }}
                 >
-                  登録
+                  {editingGroup ? "更新" : "登録"}
                 </button>
               </div>
             </form>
