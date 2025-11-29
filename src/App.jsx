@@ -3,7 +3,6 @@ import React, { useState, useEffect } from "react";
 const STORAGE_KEY = "attendency_groups";
 
 function App() {
-  // ✅ 初期化時に localStorage から読み込む
   const [groups, setGroups] = useState(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -24,7 +23,6 @@ function App() {
   const [memberCount, setMemberCount] = useState("");
   const [editingGroup, setEditingGroup] = useState(null); // null: 新規, object: 編集
 
-  // ✅ groups が変わるたびに保存
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(groups));
